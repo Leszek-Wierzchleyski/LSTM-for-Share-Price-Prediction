@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jul 16 01:15:14 2024
+
+@author: leszekwierzchleyski
+"""
+"""This code employes Bayesian Optimisation in order to select bias 
+regulizers, in order to prtevent overfitting of the 
+Neural Network. Many thanks to  Amin Asbai. This code is in part based on 
+Amin's code for LSTM hyper parameter tuning. 
+https://medium.com/analytics-vidhya/hypertuning-a-lstm-with-keras-tuner-to-forecast-solar-irradiance-7da7577e96eb"""
+
+from pandas import read_csv
+import numpy as np
+from keras.models import Sequential
+from keras.layers import Dense
+from sklearn.metrics import mean_absolute_percentage_error
+import keras
+from keras import layers
+import keras_tuner
+import warnings
+warnings.simplefilter("ignore", UserWarning)
+
+"Read in dataset and prepare training and test set"
+
+def get_train_test(url, split_percent=0.8):
+    df = read_csv(url, usecols=[5], engine='python')
+    data = np.array(df.values.astype('float32'))
+    print(df.head())
+    n = len(data)
+    split = int(n*split_percent)
+    train_data = data[range(split)]
+    test_data = data[split:]
+    return train_data, test_data, data
+
+"""Many thanks to ADITYA MHASKE  for the dataset. You will need to create a fresh URL as they expire regularly 
+https://www.kaggle.com/datasets/adityamhaske/maang-stock-prices-july-2018-to-july-2023?select=MSFT.csv"""
+
+file_url ='https://storage.googleapis.com/kagglesdsdata/datasets/3567788/6213043/AAPL.csv?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=gcp-kaggle-com%40kaggle-161607.iam.gserviceaccount.com%2F20240713%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20240713T172606Z&X-Goog-Expires=259200&X-Goog-SignedHeaders=host&X-Goog-Signature=30f7b4fbea8b2958619c5361b03d9514ed2246f73dcd929f3cfab2c57a1353d62fcdc9df5f06bd00f52dd1beb6b41c8177d4d0d058e59cda83b95c6e4f3985292675b7e241f8332fc22e524fdd55c200d1b4854077a8cc3d4beb97e7ee2f939fbcd2f73d7b8077c097fa74546943f4c62348b1b9612994fa793c47d250889b5ecbea5fe116bcb64d78360a31b6d5e8be53aa743ba82de4da39cdd0504b2bbafef9e531383f0ed67d60981cae9667e1782a08d2f8becec08ae5cc6029477b84ea85ecf693a7be280cbe4b9f55d1dc69ba79f18ae271756bbe4efb581f77829d84b12c9164522e40191382a7c9fc1e939366506acefcf136aaa3eeff7815c3d8eb'
+train_data, test_data, data = get_train_test(file_url)
+
+
+
+
+'Format data for use in LSTM'
+
+def get_XY(dat, time_steps):
+    Y_ind = np.arange(time_steps, len(dat), time_steps)
+    Y = dat[Y_ind]
+    rows_x = len(Y)
+    X = dat[range(time_steps*rows_x)]
+    X = np.reshape(X, (rows_x, time_steps, 1))    
+    return X, Y
+
+time_steps = 10
+trainX, trainY = get_XY(train_data, time_steps)
+testX, testY = get_XY(test_data, time_steps)
+
+"Build the Neural Network"
+
+def create_LSTM(hp):
+    model = Sequential()
+    model.add(layers.LSTM(6,  input_shape=(time_steps,1), 
+                         activation='leaky_relu',  bias_regularizer=hp.Choice('reg1', values=['l1','l2','l1_l2']),kernel_regularizer='l1_l2', kernel_initializer='he_normal', return_sequences=True))
+    model.add(layers.LSTM(7,  input_shape=(time_steps,1), 
+                        activation='leaky_relu',  bias_regularizer=hp.Choice('reg2', values=['l1','l2','l1_l2']), kernel_regularizer='l1_l2', kernel_initializer='he_normal', return_sequences=False))
+    model.add(Dense(units=1, activation='linear')) 
+    model.compile(loss='mean_absolute_percentage_error', optimizer='adam', metrics=['mean_absolute_percentage_error'])
+    return model
+
+"Set up parameter search"
+
+tuner= keras_tuner.BayesianOptimization(
+        create_LSTM,
+        objective='mean_absolute_percentage_error',
+        max_trials=10,
+     
+        executions_per_trial=3,
+        max_consecutive_failed_trials=1000,
+        overwrite=True,
+        directory="Tune_4"
+        )
+
+"Run search"
+
+tuner.search(
+        x=trainX,
+        y=trainY,
+        epochs=1000,
+        batch_size=20,
+        validation_data=(testX,testY),
+)
+
+
+
+best_model = tuner.get_best_models(num_models=1)[0]
