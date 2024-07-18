@@ -35,7 +35,7 @@ def get_train_test(url, split_percent=0.8):
     return train_data, test_data, data
 
 
-"""Many thanks to ADITYA MHASKE  for the dataset 
+"""Many thanks to ADITYA MHASKE  for the dataset. You will need to create a fresh URL as they expire regularly.
 https://www.kaggle.com/datasets/adityamhaske/maang-stock-prices-july-2018-to-july-2023?select=MSFT.csv"""
 
 
