@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jul 16 17:22:43 2024
+
+@author: leszekwierzchleyski
+"""
+
+"""This is the script for training and testing the model. Many thanks to Jason 
+ Brownlee from Machine Learning Mastery. This code is based in part on Jason's 
+ code for predicting sunspots 
+ https://machinelearningmastery.com/understanding-simple-recurrent-neural-networks-in-keras/ """ 
+
+
+
+from pandas import read_csv
+import numpy as np
+from keras.models import Sequential
+from keras.layers import Dense
+from sklearn.metrics import mean_absolute_percentage_error
+import matplotlib.pyplot as plt
+import keras
+from keras import layers
+from sklearn.metrics import r2_score
+
+"Read in dataset and prepare training and test set"
+
+def get_train_test(url, split_percent=0.8):
+    df = read_csv(url, usecols=[5], engine='python')
+    data = np.array(df.values.astype('float32'))
+    print(df.head())
+    n = len(data)
+    split = int(n*split_percent)
+    train_data = data[range(split)]
+    test_data = data[split:]
+    return train_data, test_data, data
+
+"""Many thanks to ADITYA MHASKE  for the dataset. You will need to create a fresh URL as they expire regularly 
+https://www.kaggle.com/datasets/adityamhaske/maang-stock-prices-july-2018-to-july-2023?select=MSFT.csv"""
+
+file_url ='https://storage.googleapis.com/kagglesdsdata/datasets/3567788/6213043/AAPL.csv?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=gcp-kaggle-com%40kaggle-161607.iam.gserviceaccount.com%2F20240713%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20240713T172606Z&X-Goog-Expires=259200&X-Goog-SignedHeaders=host&X-Goog-Signature=30f7b4fbea8b2958619c5361b03d9514ed2246f73dcd929f3cfab2c57a1353d62fcdc9df5f06bd00f52dd1beb6b41c8177d4d0d058e59cda83b95c6e4f3985292675b7e241f8332fc22e524fdd55c200d1b4854077a8cc3d4beb97e7ee2f939fbcd2f73d7b8077c097fa74546943f4c62348b1b9612994fa793c47d250889b5ecbea5fe116bcb64d78360a31b6d5e8be53aa743ba82de4da39cdd0504b2bbafef9e531383f0ed67d60981cae9667e1782a08d2f8becec08ae5cc6029477b84ea85ecf693a7be280cbe4b9f55d1dc69ba79f18ae271756bbe4efb581f77829d84b12c9164522e40191382a7c9fc1e939366506acefcf136aaa3eeff7815c3d8eb'
+
+train_data, test_data, data = get_train_test(file_url)
+
+
+
+
+
+'Format data for use in LSTM'
+
+def get_XY(dat, time_steps):
+    Y_ind = np.arange(time_steps, len(dat), time_steps)
+    Y = dat[Y_ind]
+    rows_x = len(Y)
+    X = dat[range(time_steps*rows_x)]
+    X = np.reshape(X, (rows_x, time_steps, 1))    
+    return X, Y
+
+time_steps = 10
+trainX, trainY = get_XY(train_data, time_steps)
+testX, testY = get_XY(test_data, time_steps)
+
+"Build the Neural Network"
+
+def create_GRU(input_shape):
+    model = Sequential()
+    model.add(layers.LSTM(6, input_shape=input_shape, 
+                        activation='leaky_relu', kernel_regularizer='l1_l2', bias_regularizer='l1', kernel_initializer=keras.initializers.HeNormal(), return_sequences=True))
+    model.add(layers.LSTM(7, return_sequences=False,
+                         activation='leaky_relu', kernel_regularizer='l1_l2',bias_regularizer='l2', kernel_initializer=keras.initializers.HeNormal()))
+    model.add(Dense(1, activation='linear'))
+    model.compile(loss='mean_absolute_percentage_error', optimizer='adam')
+    return model
+
+"Run Model"
+
+model = create_GRU(input_shape=(time_steps,1))
+model.fit(trainX, trainY, epochs=1000, batch_size=20, verbose=2)
+
+"Make Predictions"
+train_predict = model.predict(trainX)
+test_predict = model.predict(testX)
+
+"Calculate Performance Metrics"
+train_mape = mean_absolute_percentage_error(trainY, train_predict)
+test_mape = mean_absolute_percentage_error(testY, test_predict)
+train_R2 = r2_score(trainY, train_predict)
+test_R2 = r2_score(testY, test_predict)
+  
+  
+print('Train MAPE:',  (train_mape))
+print('Test MAPE:',  (test_mape))   
+print('Train R2:', (train_R2)) 
+print('Test R2:', (test_R2)) 
+
+
+"Plot Results"
+
+def plot_result(trainY, testY, train_predict, test_predict):
+    actual = np.append(trainY, testY)
+    predictions = np.append(train_predict, test_predict)
+    rows = len(actual)
+    plt.figure(figsize=(15, 6), dpi=80)
+    plt.plot(range(rows), actual)
+    plt.plot(range(rows), predictions, linestyle='dashed')
+    plt.axvline(x=len(trainY), color='r')
+    plt.legend(['Actual', 'Predictions'])
+    plt.xlabel('TimeStep (Days)')
+    plt.ylabel('Close Value (USD)')
+    plt.title('Actual and Predicted Values. The Red Line Separates The Training And Test Examples')
+    
+
+
+plot_result(trainY, testY, train_predict, test_predict)
+
